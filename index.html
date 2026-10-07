@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Контроль трат</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">ЛИЧНЫЕ ФИНАНСЫ</p>
+        <h1>Контроль трат</h1>
+      </div>
+      <button class="primary-btn" id="addExpenseBtn">+ Добавить трату</button>
+    </header>
+
+    <main>
+      <section class="summary-grid" id="summary"></section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">ПО МЕСЯЦАМ</p>
+            <h2>Общая картина</h2>
+          </div>
+          <select id="yearSelect" class="select"></select>
+        </div>
+        <div class="table-wrap">
+          <table id="monthsTable">
+            <thead>
+              <tr>
+                <th>Месяц</th>
+                <th>Траты</th>
+                <th>Изменение</th>
+                <th>Количество</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="analytics-grid">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">КАТЕГОРИИ</p>
+              <h2>На что уходят деньги</h2>
+            </div>
+            <select id="categoryMonthSelect" class="select"></select>
+          </div>
+          <div id="categoryAnalysis" class="category-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">ДИНАМИКА</p>
+              <h2>Тенденция по месяцам</h2>
+            </div>
+          </div>
+          <div class="chart-box">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">ВСЕ ТРАТЫ</p>
+            <h2>История</h2>
+          </div>
+          <select id="historyMonthSelect" class="select"></select>
+        </div>
+        <div class="table-wrap">
+          <table id="expensesTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Вещь</th>
+                <th>Категория</th>
+                <th>Сумма</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="emptyHistory" class="empty-state">Пока нет трат.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="expenseModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="closeModalBtn" aria-label="Закрыть">×</button>
+      <p class="section-kicker">НОВАЯ ЗАПИСЬ</p>
+      <h2 id="modalTitle">Добавить трату</h2>
+      <form id="expenseForm">
+        <label>
+          Вещь
+          <input id="itemInput" required maxlength="80" placeholder="Например, продукты">
+        </label>
+        <label>
+          Категория
+          <select id="categoryInput" required></select>
+        </label>
+        <label>
+          Сумма
+          <div class="amount-input">
+            <input id="amountInput" required inputmode="decimal" min="0.01" step="0.01" type="number" placeholder="0">
+            <span>₽</span>
+          </div>
+        </label>
+        <label>
+          Дата
+          <input id="dateInput" required type="date">
+        </label>
+        <div class="form-actions">
+          <button type="button" class="secondary-btn" id="cancelBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
