@@ -1,179 +1,374 @@
-'use strict';
-const CATS = ['коммунальные услуги','продукты питания','развлечения','Леша','Настя','дети','кредиты','подписки','бытовые товары','уход/косметика','питание вне дома','транспорт','бьюти','медицина','кошки','накопления','машина','прочее'];
+const STORAGE_KEY = "expenses-tracker-v1";
 
-/* ---- Хранилище. Когда появится сервер — меняется только этот объект. ---- */
-const Store = {
-  KEY: 'expenses_v1',
-  load() { try { return JSON.parse(localStorage.getItem(this.KEY)) || []; } catch { return []; } },
-  save(data) { localStorage.setItem(this.KEY, JSON.stringify(data)); }
-};
+const CATEGORIES = [
+  "Коммунальные услуги",
+  "Продукты питания",
+  "Развлечения",
+  "Леша",
+  "Настя",
+  "Дети",
+  "Кредиты",
+  "Подписки",
+  "Бытовые товары",
+  "Уход/косметика",
+  "Питание вне дома",
+  "Транспорт",
+  "Бьюти",
+  "Медицина",
+  "Кошки",
+  "Накопления",
+  "Машина",
+  "Прочее"
+];
 
-let data = Store.load();
-let editingId = null;
-const $ = id => document.getElementById(id);
+let expenses = loadExpenses();
 
-/* ---- Утилиты ---- */
-const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-const thisMonth = () => today().slice(0, 7);
-const fmt = n => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' ₽';
-const short = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : Math.round(n);
-const mName = k => new Date(k + '-01T00:00').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
-const mShort = k => new Date(k + '-01T00:00').toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const sum = a => a.reduce((s, e) => s + e.amount, 0);
-const months = () => [...new Set([...data.map(e => e.date.slice(0, 7)), thisMonth()])].sort();
-const prevOf = m => { const d = new Date(m + '-01T00:00'); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7) === m ? m : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
-const delta = (cur, prev) => {
-  if (!prev) return '<span class="muted">—</span>';
-  const p = (cur - prev) / prev * 100;
-  return `<span class="${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(0)}%</span>`;
-};
-const inMonth = m => data.filter(e => e.date.startsWith(m));
-const byCat = list => { const t = {}; CATS.forEach(c => t[c] = 0); list.forEach(e => t[e.cat] = (t[e.cat] || 0) + e.amount); return t; };
+const $ = (selector) => document.querySelector(selector);
 
-/* ---- Рендер ---- */
-function renderMonthSelect() {
-  const sel = $('month'), keep = sel.value || thisMonth();
-  const ms = months().reverse();
-  sel.innerHTML = ms.map(m => `<option value="${m}">${mName(m)}</option>`).join('');
-  sel.value = ms.includes(keep) ? keep : ms[0];
+function loadExpenses() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 }
 
-function renderKpis(m) {
-  const cur = inMonth(m), prev = inMonth(prevOf(m));
-  const total = sum(cur), pTotal = sum(prev);
-  const t = byCat(cur), top = Object.entries(t).sort((a, b) => b[1] - a[1])[0];
-  $('kpis').innerHTML = `
-    <div class="kpi"><small>Всего за месяц</small><b>${fmt(total)}</b></div>
-    <div class="kpi"><small>К прошлому месяцу (${fmt(pTotal)})</small><b>${delta(total, pTotal)}</b></div>
-    <div class="kpi"><small>Больше всего ушло на</small><b>${top && top[1] > 0 ? esc(top[0]) : '—'}</b></div>
-    <div class="kpi"><small>Количество трат</small><b>${cur.length}</b></div>`;
+function saveExpenses() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
 }
 
-function renderCats(m) {
-  const t = byCat(inMonth(m)), p = byCat(inMonth(prevOf(m)));
-  const total = Object.values(t).reduce((a, b) => a + b, 0);
-  const rows = Object.entries(t).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  const max = rows.length ? rows[0][1] : 1;
-  $('cats').innerHTML = rows.length ? rows.map(([c, v]) => `
-    <div class="cat"><span>${esc(c)}</span>
-      <div class="track"><div class="fill" style="width:${v / max * 100}%"></div></div>
-      <span class="num">${fmt(v)} <span class="muted">${(v / total * 100).toFixed(0)}%</span></span>
-      <span class="num" title="к прошлому месяцу">${delta(v, p[c])}</span></div>`).join('')
-    : '<p class="muted">В этом месяце трат пока нет.</p>';
+function formatMoney(value) {
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
-function renderTrend() {
-  const sel = $('trendCat');
-  if (!sel.options.length) sel.innerHTML = '<option value="">Все категории</option>' + CATS.map(c => `<option>${esc(c)}</option>`).join('');
-  const c = sel.value, ms = months();
-  const vals = ms.map(m => sum(inMonth(m).filter(e => !c || e.cat === c)));
-  const max = Math.max(...vals, 1);
-  $('chart').innerHTML = ms.map((m, i) => `<div class="col"><span>${short(vals[i])}</span>
-    <div class="wrap"><div class="bar" title="${mName(m)}: ${fmt(vals[i])}" style="height:${vals[i] / max * 100}%"></div></div>
-    <span class="muted">${mShort(m)}</span></div>`).join('');
-  const filled = vals.filter(v => v > 0);
-  if (filled.length < 2) { $('trendNote').textContent = 'Для анализа тенденции нужны данные минимум за два месяца.'; return; }
-  const avg = filled.reduce((a, b) => a + b, 0) / filled.length, last = vals[vals.length - 1];
-  const prevAvg = vals.slice(0, -1).filter(v => v > 0);
-  const base = prevAvg.reduce((a, b) => a + b, 0) / (prevAvg.length || 1);
-  const maxI = vals.indexOf(Math.max(...vals));
-  const d = base ? (last - base) / base * 100 : 0;
-  $('trendNote').textContent = `Среднее в месяц: ${fmt(avg)}. Максимум: ${mName(ms[maxI])} (${fmt(vals[maxI])}). ` +
-    `Последний месяц ${d >= 0 ? 'выше' : 'ниже'} среднего за предыдущие на ${Math.abs(d).toFixed(0)}%.`;
+function formatDate(dateString) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(new Date(`${dateString}T12:00:00`));
 }
 
-function renderPivot() {
-  const ms = months();
-  const head = `<tr><th>Категория</th>${ms.map(m => `<th class="num">${mShort(m)}</th>`).join('')}<th class="num">Всего</th></tr>`;
-  const per = ms.map(m => byCat(inMonth(m)));
-  const body = CATS.map(c => {
-    const vs = per.map(t => t[c]), tot = vs.reduce((a, b) => a + b, 0);
-    return tot ? `<tr><td>${esc(c)}</td>${vs.map(v => `<td class="num">${v ? fmt(v) : '·'}</td>`).join('')}<td class="num"><b>${fmt(tot)}</b></td></tr>` : '';
-  }).join('');
-  const totals = per.map(t => Object.values(t).reduce((a, b) => a + b, 0));
-  const dl = totals.map((v, i) => `<td class="num">${i ? delta(v, totals[i - 1]) : ''}</td>`).join('');
-  $('pivot').innerHTML = head + body +
-    `<tr class="total"><td>Итого</td>${totals.map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(totals.reduce((a, b) => a + b, 0))}</td></tr>` +
-    `<tr><td class="muted">к прошлому месяцу</td>${dl}<td></td></tr>`;
+function monthKey(dateString) {
+  return dateString.slice(0, 7);
 }
 
-function renderList(m) {
-  const rows = inMonth(m).sort((a, b) => b.date.localeCompare(a.date));
-  $('list').innerHTML = rows.length
-    ? `<tr><th>Дата</th><th>Вещь</th><th>Категория</th><th class="num">Сумма</th><th></th></tr>` +
-      rows.map(e => `<tr><td>${e.date.split('-').reverse().join('.')}</td><td>${esc(e.item)}</td><td>${esc(e.cat)}</td>
-        <td class="num">${fmt(e.amount)}</td>
-        <td class="num"><button class="icon" data-edit="${e.id}" title="Изменить">✎</button><button class="icon" data-del="${e.id}" title="Удалить">✕</button></td></tr>`).join('')
-    : '<tr><td class="muted">Трат за этот месяц нет.</td></tr>';
+function monthLabel(key) {
+  const [year, month] = key.split("-");
+  return new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    year: "numeric"
+  }).format(new Date(Number(year), Number(month) - 1, 1));
+}
+
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function getMonths() {
+  const set = new Set(expenses.map(e => monthKey(e.date)));
+  set.add(currentMonth());
+  return [...set].sort((a, b) => b.localeCompare(a));
+}
+
+function getYears() {
+  return [...new Set(getMonths().map(m => m.slice(0, 4)))].sort().reverse();
+}
+
+function totalForMonth(month) {
+  return expenses
+    .filter(e => monthKey(e.date) === month)
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+}
+
+function renderCategoryOptions() {
+  $("#categoryInput").innerHTML = CATEGORIES
+    .map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+    .join("");
+}
+
+function renderSelectors() {
+  const months = getMonths();
+  const current = currentMonth();
+
+  const categorySelect = $("#categoryMonthSelect");
+  const historySelect = $("#historyMonthSelect");
+
+  categorySelect.innerHTML = months
+    .map(m => `<option value="${m}">${capitalize(monthLabel(m))}</option>`)
+    .join("");
+
+  historySelect.innerHTML = `<option value="all">Все месяцы</option>` + months
+    .map(m => `<option value="${m}">${capitalize(monthLabel(m))}</option>`)
+    .join("");
+
+  if (months.includes(current)) {
+    categorySelect.value = current;
+    historySelect.value = current;
+  }
+
+  const years = getYears();
+  const yearSelect = $("#yearSelect");
+  yearSelect.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderSummary() {
+  const month = currentMonth();
+  const total = totalForMonth(month);
+  const monthExpenses = expenses.filter(e => monthKey(e.date) === month);
+  const average = monthExpenses.length ? total / monthExpenses.length : 0;
+
+  const previous = new Date();
+  previous.setMonth(previous.getMonth() - 1);
+  const previousKey = previous.toISOString().slice(0, 7);
+  const previousTotal = totalForMonth(previousKey);
+
+  let note = "Пока нет данных за прошлый месяц";
+  if (previousTotal > 0) {
+    const diff = ((total - previousTotal) / previousTotal) * 100;
+    note = `${diff > 0 ? "+" : ""}${diff.toFixed(0)}% к прошлому месяцу`;
+  }
+
+  $("#summary").innerHTML = `
+    <div class="summary-card">
+      <div class="summary-label">Траты в ${capitalize(monthLabel(month))}</div>
+      <div class="summary-value">${formatMoney(total)}</div>
+      <div class="summary-note">${note}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Количество покупок</div>
+      <div class="summary-value">${monthExpenses.length}</div>
+      <div class="summary-note">за текущий месяц</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Средняя трата</div>
+      <div class="summary-value">${formatMoney(average)}</div>
+      <div class="summary-note">на одну запись</div>
+    </div>
+  `;
+}
+
+function renderMonthsTable() {
+  const selectedYear = $("#yearSelect").value || String(new Date().getFullYear());
+  const months = getMonths().filter(m => m.startsWith(selectedYear)).sort();
+
+  const tbody = $("#monthsTable tbody");
+  tbody.innerHTML = months.map((month, index) => {
+    const total = totalForMonth(month);
+    const prev = index > 0 ? totalForMonth(months[index - 1]) : null;
+    let change = `<span class="change-neutral">—</span>`;
+
+    if (prev !== null && prev > 0) {
+      const percent = ((total - prev) / prev) * 100;
+      const cls = percent > 0 ? "change-up" : percent < 0 ? "change-down" : "change-neutral";
+      change = `<span class="${cls}">${percent > 0 ? "+" : ""}${percent.toFixed(0)}%</span>`;
+    }
+
+    const count = expenses.filter(e => monthKey(e.date) === month).length;
+    return `<tr>
+      <td>${capitalize(monthLabel(month))}</td>
+      <td class="amount">${formatMoney(total)}</td>
+      <td>${change}</td>
+      <td>${count}</td>
+    </tr>`;
+  }).join("");
+
+  if (!tbody.innerHTML) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">В этом году пока нет данных.</td></tr>`;
+  }
+}
+
+function renderCategoryAnalysis() {
+  const month = $("#categoryMonthSelect").value;
+  const monthExpenses = expenses.filter(e => monthKey(e.date) === month);
+  const total = monthExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const byCategory = {};
+  monthExpenses.forEach(e => {
+    byCategory[e.category] = (byCategory[e.category] || 0) + Number(e.amount);
+  });
+
+  const rows = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+
+  if (!rows.length) {
+    $("#categoryAnalysis").innerHTML = `<div class="empty-state">Нет трат за выбранный месяц.</div>`;
+    return;
+  }
+
+  $("#categoryAnalysis").innerHTML = rows.map(([category, amount]) => {
+    const percent = total ? (amount / total) * 100 : 0;
+    return `<div class="category-row">
+      <div class="category-name">${escapeHtml(category)}</div>
+      <div class="category-bar"><div class="category-fill" style="width:${percent}%"></div></div>
+      <div class="category-total">${formatMoney(amount)}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderHistory() {
+  const selected = $("#historyMonthSelect").value;
+  const filtered = expenses
+    .filter(e => selected === "all" || monthKey(e.date) === selected)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+  const tbody = $("#expensesTable tbody");
+  $("#emptyHistory").style.display = filtered.length ? "none" : "block";
+
+  tbody.innerHTML = filtered.map(e => `<tr>
+    <td>${formatDate(e.date)}</td>
+    <td>${escapeHtml(e.item)}</td>
+    <td>${escapeHtml(e.category)}</td>
+    <td class="amount">${formatMoney(Number(e.amount))}</td>
+    <td><button class="delete-btn" data-delete="${e.id}" title="Удалить">×</button></td>
+  </tr>`).join("");
+}
+
+function drawTrendChart() {
+  const canvas = $("#trendChart");
+  const ctx = canvas.getContext("2d");
+  const box = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const width = box.clientWidth;
+  const height = box.clientHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const months = getMonths().sort().slice(-8);
+  const values = months.map(totalForMonth);
+  const max = Math.max(...values, 1);
+  const pad = { left: 15, right: 15, top: 25, bottom: 40 };
+  const chartW = width - pad.left - pad.right;
+  const chartH = height - pad.top - pad.bottom;
+
+  ctx.font = "11px DM Sans, sans-serif";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#e8e4da";
+  ctx.fillStyle = "#76817d";
+
+  for (let i = 0; i < 4; i++) {
+    const y = pad.top + chartH * (i / 3);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+  }
+
+  if (!months.length) return;
+
+  const points = months.map((m, i) => ({
+    x: months.length === 1 ? width / 2 : pad.left + chartW * (i / (months.length - 1)),
+    y: pad.top + chartH - (values[i] / max) * chartH
+  }));
+
+  ctx.strokeStyle = "#315b50";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+  ctx.stroke();
+
+  points.forEach((p, i) => {
+    ctx.fillStyle = "#fffdf8";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#315b50";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "#76817d";
+    ctx.textAlign = "center";
+    ctx.fillText(new Intl.DateTimeFormat("ru-RU", { month: "short" })
+      .format(new Date(Number(months[i].slice(0, 4)), Number(months[i].slice(5)) - 1, 1)), p.x, height - 15);
+  });
 }
 
 function renderAll() {
-  renderMonthSelect();
-  const m = $('month').value;
-  renderKpis(m); renderCats(m); renderTrend(); renderPivot(); renderList(m);
+  renderSelectors();
+  renderSummary();
+  renderMonthsTable();
+  renderCategoryAnalysis();
+  renderHistory();
+  drawTrendChart();
 }
 
-/* ---- Форма ---- */
-function resetForm() {
-  editingId = null; $('form').reset(); $('date').value = today();
-  $('formTitle').textContent = 'Новая трата'; $('submitBtn').textContent = 'Добавить'; $('cancel').hidden = true;
+function openModal() {
+  $("#expenseModal").classList.remove("hidden");
+  $("#dateInput").value = new Date().toISOString().slice(0, 10);
+  $("#itemInput").focus();
 }
 
-$('form').addEventListener('submit', ev => {
-  ev.preventDefault();
-  const rec = { id: editingId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    item: $('item').value.trim(), cat: $('cat').value, amount: parseFloat($('amount').value), date: $('date').value };
-  if (!rec.item || !(rec.amount >= 0)) return;
-  data = editingId ? data.map(e => e.id === editingId ? rec : e) : [...data, rec];
-  Store.save(data);
-  const m = rec.date.slice(0, 7);
-  resetForm(); renderAll();
-  if ([...$('month').options].some(o => o.value === m)) { $('month').value = m; renderAll(); }
-  $('item').focus();
+function closeModal() {
+  $("#expenseModal").classList.add("hidden");
+  $("#expenseForm").reset();
+}
+
+$("#addExpenseBtn").addEventListener("click", openModal);
+$("#closeModalBtn").addEventListener("click", closeModal);
+$("#cancelBtn").addEventListener("click", closeModal);
+
+$("#expenseModal").addEventListener("click", (event) => {
+  if (event.target === $("#expenseModal")) closeModal();
 });
-$('cancel').onclick = resetForm;
 
-$('list').addEventListener('click', ev => {
-  const del = ev.target.dataset.del, ed = ev.target.dataset.edit;
-  if (del && confirm('Удалить эту трату?')) { data = data.filter(e => e.id !== del); Store.save(data); renderAll(); }
-  if (ed) {
-    const e = data.find(x => x.id === ed); editingId = ed;
-    $('item').value = e.item; $('cat').value = e.cat; $('amount').value = e.amount; $('date').value = e.date;
-    $('formTitle').textContent = 'Изменить трату'; $('submitBtn').textContent = 'Сохранить'; $('cancel').hidden = false;
-    window.scrollTo({ top: 0, behavior: 'smooth' }); $('item').focus();
+$("#expenseForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const expense = {
+    id: Date.now(),
+    item: $("#itemInput").value.trim(),
+    category: $("#categoryInput").value,
+    amount: Number($("#amountInput").value),
+    date: $("#dateInput").value
+  };
+
+  if (!expense.item || !expense.category || !expense.amount || expense.amount <= 0 || !expense.date) return;
+
+  expenses.push(expense);
+  saveExpenses();
+  closeModal();
+  renderAll();
+});
+
+$("#categoryMonthSelect").addEventListener("change", renderCategoryAnalysis);
+$("#historyMonthSelect").addEventListener("change", renderHistory);
+$("#yearSelect").addEventListener("change", renderMonthsTable);
+
+$("#expensesTable").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-delete]");
+  if (!button) return;
+
+  const id = Number(button.dataset.delete);
+  const expense = expenses.find(e => e.id === id);
+  if (!expense) return;
+
+  if (confirm(`Удалить трату «${expense.item}» на ${formatMoney(expense.amount)}?`)) {
+    expenses = expenses.filter(e => e.id !== id);
+    saveExpenses();
+    renderAll();
   }
 });
-$('month').onchange = () => { const m = $('month').value; renderKpis(m); renderCats(m); renderList(m); };
-$('trendCat').onchange = renderTrend;
 
-/* ---- Экспорт / импорт ---- */
-function download(name, text, type) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
-  a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-$('exportJson').onclick = () => download(`expenses-${today()}.json`,
-  JSON.stringify({ app: 'expense-tracker', version: 1, exportedAt: new Date().toISOString(), expenses: data }, null, 2), 'application/json');
-$('exportCsv').onclick = () => {
-  const q = s => `"${String(s).replace(/"/g, '""')}"`;
-  const rows = [...data].sort((a, b) => a.date.localeCompare(b.date)).map(e =>
-    [e.date, q(e.item), q(e.cat), String(e.amount).replace('.', ',')].join(';'));
-  download(`expenses-${today()}.csv`, '\ufeff' + ['Дата;Вещь;Категория;Сумма', ...rows].join('\r\n'), 'text/csv;charset=utf-8');
-};
-$('importFile').onchange = async ev => {
-  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
-  try {
-    const j = JSON.parse(await f.text()), arr = Array.isArray(j) ? j : j.expenses;
-    const ok = arr.filter(e => e && e.id && e.item && e.cat && e.date && isFinite(e.amount));
-    const have = new Set(data.map(e => e.id)), fresh = ok.filter(e => !have.has(e.id));
-    data = [...data, ...fresh.map(e => ({ id: String(e.id), item: String(e.item), cat: String(e.cat), amount: +e.amount, date: String(e.date) }))];
-    Store.save(data); renderAll(); alert(`Добавлено трат: ${fresh.length}. Уже были в базе: ${ok.length - fresh.length}.`);
-  } catch { alert('Не удалось прочитать файл. Нужен JSON, скачанный из этого сайта.'); }
-};
+window.addEventListener("resize", drawTrendChart);
 
-/* ---- Старт ---- */
-$('cat').innerHTML = CATS.map(c => `<option>${esc(c)}</option>`).join('');
-$('date').value = today();
+renderCategoryOptions();
 renderAll();
